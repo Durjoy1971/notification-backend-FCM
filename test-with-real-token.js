@@ -2,7 +2,7 @@
 const axios = require("axios");
 
 const BASE_URL = "http://localhost:4000";
-const userId = "user_123"; // Admin user ID
+const userId = "admin_user_123"; // Admin user ID
 
 // Real provider data that will be sent randomly
 const providers = [

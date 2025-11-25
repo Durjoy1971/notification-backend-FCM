@@ -9,7 +9,7 @@ async function runTest() {
     console.log("Saving token...");
     await axios.post(`${BASE_URL}/admin/save-token`, {
       userId,
-      token: "user_123",
+      token: "admin_user_123",
     });
     console.log("Token saved.");
 
