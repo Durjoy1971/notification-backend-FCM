@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Service Account (NEVER commit this!)
+service-account.json
+
+# Environment variables
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
