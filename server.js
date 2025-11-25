@@ -127,6 +127,148 @@ app.post("/admin/notifications/mark-read", (req, res) => {
   res.status(200).send("Updated");
 });
 
+// ============================================
+// USER PORTAL ENDPOINTS
+// ============================================
+
+// 1. SAVE TOKEN (User Portal)
+app.post("/user/save-token", (req, res) => {
+  const { userId, token } = req.body;
+  if (!userId || !token) return res.status(400).send("Missing data");
+
+  userTokens[userId] = token;
+  console.log(`✅ User token saved for ${userId}`);
+  res.status(200).send("Saved");
+});
+
+// 2. TRIGGER NOTIFICATION - Document Status Update (User Portal)
+app.post("/user/trigger-notification", async (req, res) => {
+  const {
+    userId,
+    documentId,
+    documentType,
+    providerName,
+    status,
+    redirectUrl,
+  } = req.body;
+  const token = userTokens[userId];
+
+  // Determine notification content based on status
+  const isApproved = status === "approved";
+  const title = isApproved ? "Document Approved" : "Document Rejected";
+  const body = isApproved
+    ? `The ${documentType} Request from ${providerName} has been approved.`
+    : `The ${documentType} Request from ${providerName} has been rejected.`;
+
+  // Create the notification object for document status update
+  const notificationData = {
+    id: Date.now(), // Unique ID
+    title: title,
+    body: body,
+    data: {
+      url: redirectUrl,
+      action_id: documentId,
+      type: isApproved ? "document_approved" : "document_rejected",
+    },
+    timestamp: new Date().toISOString(),
+    read: false,
+  };
+
+  // 1. Save to History (In-Memory Database) - Always save regardless of FCM
+  if (!notificationHistory[userId]) notificationHistory[userId] = [];
+  notificationHistory[userId].unshift(notificationData); // Add to top of list
+
+  // 2. Send to Firebase (Real-time Popup) - Only if token exists
+  if (!token) {
+    console.log(
+      `⚠️  No FCM token for ${userId}, notification saved to history only`
+    );
+    return res.status(200).json({
+      success: true,
+      notification: notificationData,
+      warning: "No FCM token found, notification saved to history only",
+    });
+  }
+
+  const message = {
+    notification: {
+      title: notificationData.title,
+      body: notificationData.body,
+    },
+    data: {
+      // Firebase data must be strings
+      url: notificationData.data.url,
+      action_id: String(notificationData.data.action_id),
+      type: notificationData.data.type,
+    },
+    token: token,
+  };
+
+  try {
+    await admin.messaging().send(message);
+    console.log(
+      `🚀 Sent ${status} notification for ${documentType} (${documentId})`
+    );
+    res.status(200).json({ success: true, notification: notificationData });
+  } catch (error) {
+    console.error("Error sending FCM:", error.message);
+    // Notification is already saved to history, so return success with warning
+    res.status(200).json({
+      success: true,
+      notification: notificationData,
+      warning: `FCM send failed: ${error.message}. Notification saved to history.`,
+    });
+  }
+});
+
+// 3. GET NOTIFICATIONS (For the Dropdown List - User Portal)
+app.get("/user/notifications/:userId", (req, res) => {
+  const { userId } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const status = req.query.status; // 'read', 'unread', or undefined (all)
+
+  let list = notificationHistory[userId] || [];
+
+  // Calculate unread count from the full list (before filtering)
+  const unread_count = list.filter((n) => !n.read).length;
+
+  // Apply status filter if provided
+  if (status === "read") {
+    list = list.filter((n) => n.read);
+  } else if (status === "unread") {
+    list = list.filter((n) => !n.read);
+  }
+
+  const total_notification = list.length;
+  const total_pages = Math.ceil(total_notification / limit);
+
+  const startIndex = (page - 1) * limit;
+  const endIndex = page * limit;
+
+  const paginatedList = list.slice(startIndex, endIndex);
+
+  res.status(200).json({
+    total_notification,
+    unread_count,
+    current_page: page,
+    total_pages,
+    data: paginatedList,
+  });
+});
+
+// 4. MARK AS READ (User Portal)
+app.post("/user/notifications/mark-read", (req, res) => {
+  const { userId, notificationId } = req.body;
+  if (notificationHistory[userId]) {
+    const notif = notificationHistory[userId].find(
+      (n) => n.id === notificationId
+    );
+    if (notif) notif.read = true;
+  }
+  res.status(200).send("Updated");
+});
+
 const PORT = 4000;
 app.listen(PORT, () => {
   console.log(`Backend Server running on http://localhost:${PORT}`);
